@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>LoadMaster Pro v7.5</title>
+    <title>LoadMaster Pro v7.6</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root { --bg: #f4f4f9; --text: #333; --card: #fff; --primary: #007bff; --accent: #28a745; --note: #6f42c1; }
@@ -30,11 +30,10 @@
 <body>
 
 <div style="display:flex; justify-content: space-between; align-items: center;">
-    <h2 style="margin: 10px 0;">LoadMaster <span style="color:var(--primary)">v7.5</span></h2>
+    <h2 style="margin: 10px 0;">LoadMaster <span style="color:var(--primary)">v7.6</span></h2>
     <button onclick="toggleTheme()" style="width: auto; padding: 5px 15px;">🌗 Mode</button>
 </div>
 
-<!-- Shift Context -->
 <div class="card" style="background: rgba(0,123,255,0.05);">
     <div class="btn-grid">
         <div><span class="sticky-label">OPERATOR</span><select id="opSelect" onchange="saveSelections()"></select></div>
@@ -46,7 +45,6 @@
     </div>
 </div>
 
-<!-- Loading Form -->
 <div class="card">
     <div class="btn-grid">
         <div>
@@ -72,7 +70,6 @@
     <button class="btn-main" id="confirmBtn" onclick="confirmLoad()">CONFIRM LOAD</button>
 </div>
 
-<!-- General Note Form -->
 <div class="card" style="border: 1px solid var(--note);">
     <span class="sticky-label" style="color: var(--note);">General Shift Note (No Load)</span>
     <textarea id="generalNote" rows="2" placeholder="e.g. Blasting delay, Maintenance..."></textarea>
@@ -94,7 +91,6 @@
 <button onclick="exportToExcel()" style="background:#1d6f42; color:white; font-weight: bold;">📥 Export Excel Spreadsheet</button>
 <button onclick="toggleManage()" style="background:#444; color:white;">⚙️ Manage List Assets</button>
 
-<!-- Management UI -->
 <div id="manageUI" class="card manage-section">
     <h3>Data Management</h3>
     <p><b>Truck Assets</b></p><div id="truckList"></div>
@@ -156,7 +152,6 @@
         const weight = parseFloat(document.getElementById('weightInput').value) || 0;
         if (weight <= 0) return alert("Please enter a valid load weight greater than 0");
 
-        // Use custom time if provided, otherwise default to exactly NOW
         const timeVal = document.getElementById('timeInput').value;
         const loadDate = timeVal ? new Date(timeVal) : new Date();
 
@@ -170,8 +165,6 @@
         };
         
         if (editingIndex > -1) state.loads[editingIndex] = loadData; else state.loads.push(loadData);
-        
-        // Auto-sort to ensure chronlogical order (handles backdated missed loads perfectly)
         state.loads.sort((a, b) => a.Timestamp - b.Timestamp);
         
         resetForm(); save();
@@ -203,16 +196,14 @@
         document.getElementById('truckSelect').selectedIndex = 0; 
         document.getElementById('weightInput').value = '0'; 
         document.getElementById('generalNote').value = ''; 
-        document.getElementById('timeInput').value = ''; // Reset to blank (Current Time)
-        document.getElementById('noteTimeInput').value = ''; // Reset to blank (Current Time)
+        document.getElementById('timeInput').value = ''; 
+        document.getElementById('noteTimeInput').value = ''; 
         document.getElementById('confirmBtn').innerText = "CONFIRM LOAD";
         document.getElementById('cancelEditBtn').style.display = "none";
     }
 
     function editLoad(index) {
         editingIndex = index; const l = state.loads[index];
-        
-        // Convert timestamp to local HTML datetime string so it populates the box
         const tzOffset = (new Date()).getTimezoneOffset() * 60000;
         const localISOTime = new Date(l.Timestamp - tzOffset).toISOString().slice(0, 16);
 
@@ -263,7 +254,7 @@
             <div class="history-entry ${l.Entry_Type === 'NOTE' ? 'note-entry' : ''}">
                 <div style="flex:1; padding-left: 10px;">
                     ${l.Entry_Type === 'LOAD' ? `<b>${l.Asset_Number}</b>: ${l.Total_Weight_Metric}t` : `<b>NOTE:</b> ${l.Comments}`}
-                    <br><small>${l.Time_Loaded} ${l.Entry_Type === 'LOAD' ? `- ${l.Material_Type}` : ''}</small>
+                    <br><small>${new Date(l.Timestamp).toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'})} ${l.Entry_Type === 'LOAD' ? `- ${l.Material_Type}` : ''}</small>
                 </div>
                 <div style="display:flex; gap:5px;"><button class="btn-edit" onclick="editLoad(${i})">Edit</button><button class="btn-del" onclick="deleteLoad(${i})">X</button></div>
             </div>
@@ -272,19 +263,50 @@
 
     function exportToExcel() {
         try {
-            const cleanData = state.loads.map(load => ({
-                "Time Loaded": load.Time_Loaded,
-                "Asset Number": load.Entry_Type === 'NOTE' ? "SHIFT NOTE" : load.Asset_Number,
-                "Material Type": load.Entry_Type === 'NOTE' ? "-" : load.Material_Type,
-                "Location": load.Entry_Type === 'NOTE' ? "-" : load.Material_Location,
-                "Weight (Tons)": load.Entry_Type === 'NOTE' ? "-" : load.Total_Weight_Metric,
-                "Operator": load.Operator_Name,
-                "Loader": load.Loader_Asset,
-                "Comments / Notes": load.Comments
-            }));
-            const ws = XLSX.utils.json_to_sheet(cleanData);
+            // SHEET 1: Master Log (Chronological Date and Time split)
+            const masterLogData = state.loads.map(load => {
+                const dateObj = new Date(load.Timestamp);
+                return {
+                    "Date": dateObj.toLocaleDateString('en-GB'),
+                    "Time": dateObj.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+                    "Asset Number": load.Entry_Type === 'NOTE' ? "SHIFT NOTE" : load.Asset_Number,
+                    "Material Type": load.Entry_Type === 'NOTE' ? "-" : load.Material_Type,
+                    "Location": load.Entry_Type === 'NOTE' ? "-" : load.Material_Location,
+                    "Weight (Tons)": load.Entry_Type === 'NOTE' ? "-" : load.Total_Weight_Metric,
+                    "Operator": load.Operator_Name,
+                    "Loader": load.Loader_Asset,
+                    "Comments / Notes": load.Comments
+                };
+            });
+
+            // SHEET 2: Truck Cross-Reference (Grouped by Truck, Sorted by Time)
+            const truckLoadsOnly = state.loads.filter(l => l.Entry_Type === 'LOAD');
+            truckLoadsOnly.sort((a, b) => {
+                if (a.Asset_Number < b.Asset_Number) return -1;
+                if (a.Asset_Number > b.Asset_Number) return 1;
+                return a.Timestamp - b.Timestamp; // Sort by time within the same truck
+            });
+
+            const truckCrossData = truckLoadsOnly.map(load => {
+                const dateObj = new Date(load.Timestamp);
+                return {
+                    "Truck ID": load.Asset_Number,
+                    "Date": dateObj.toLocaleDateString('en-GB'),
+                    "Time": dateObj.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+                    "Weight (Tons)": load.Total_Weight_Metric,
+                    "Material": load.Material_Type,
+                    "Location": load.Material_Location,
+                    "Loader": load.Loader_Asset
+                };
+            });
+
+            const ws1 = XLSX.utils.json_to_sheet(masterLogData);
+            const ws2 = XLSX.utils.json_to_sheet(truckCrossData);
+            
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Shift_Log");
+            XLSX.utils.book_append_sheet(wb, ws1, "Master_Log");
+            XLSX.utils.book_append_sheet(wb, ws2, "Truck_Cross_Ref");
+            
             XLSX.writeFile(wb, `ShiftLog_${new Date().toLocaleDateString('en-GB').replace(/\//g,'-')}.xlsx`);
         } catch(err) {
             alert("Export failed: " + err.message);
